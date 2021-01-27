@@ -51,7 +51,7 @@ cleanup.prototype.cleanNextPage = function() {
             _this.deleteNextWeibo();
         }, 1000);
 
-        console.log("即将清理 %d 条含有 '%s' 微博", statuses.length, this.keyword);
+        console.log("即将清理 %d 条含有 '%s' 微博", statuses.length, _this.keyword);
     }
 };
 
@@ -104,6 +104,7 @@ cleanup.prototype.start = function(keyword) {
         return;
     }
 
+    console.log("即将开始清理 '%s' 的微博", this.keyword);
     this.keyword = keyword;
     this.cleanNextPage();
 };
