@@ -1,73 +1,78 @@
-// 1. 使用 chrome 打开 weibo.com （确保你登录了微博）
-// 2. 打开调试窗口，在 console 中贴下面的代码后回车
-// 3. 如需删除其他微博，请输入一下内容后回车：start('替换成你要删除的内容'); 
+function cleanup() {
+    this.reset();
 
-let mids = [];
-let midIndex = 0;
-let timer = null;
-let page = 0;
-let keyWord = '';
-let running = false;
-let http = new XMLHttpRequest();
+    console.log("🆆🅴🅸🅱🅾 🅲🅻🅴🅰🅽🅴🆁 v1.1");
+    console.log("已完成加载，请输入 cleaner.start('关键词') 开始删除");
+}
 
-function cleanByPage() {
-    let userId = $CONFIG['uid'];
-    let url = 'https://weibo.com/p/aj/v6/mblog/mbloglist?ajwvr=6&domain=100505&rightmod=1&wvr=6&mod=personnumber&is_all=1&is_search=1&pagebar=1&feed_type=0&domain_op=100505&key_word=' + encodeURI(keyWord) + '&page=' + page + '&pre_page=' + page + '&id=100505' + userId + '&__rnd=1507705795334';
-    
+cleanup.prototype.reset = function() {
+    this.running = false;
+    this.mids = [];
+    this.midIndex = 0;
+    if (this.timer) {
+        clearInterval(this.timer);
+    }
+};
+
+cleanup.prototype.cleanNextPage = function() {
+    this.reset();
+    this.running = true;
+
+    const url = 'https://weibo.com/ajax/profile/searchblog?uid=' + $CONFIG.uid + '&page=1&feature=0&q=' + encodeURI(this.keyword);
+    let http = new XMLHttpRequest();
     http.open('GET', url, true);
     http.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
     http.send();
+
+    var _this = this;
     http.onreadystatechange = function() {
         if (http.readyState != 4 || http.status != 200) {
             return;
         }
 
-        let json = {}
-        try {
-            json = JSON.parse(http.responseText);
-        } catch (error) {
-            stop('请求失败');
-            return;
+        let json = JSON.parse(http.responseText);
+        if (json === undefined || json.data === undefined || json.data.list === undefined) {
+            console.log("无法获取到微博列表");
         }
 
-        if (json.code != 100000) {
-            stop('请求失败：' + json.msg);
-            return;
-        }
-
-        let matches = json.data.match(/mid=([0-9]+)/g);
-        if (matches == null) {
-            stop('已经删光所有含有"' + keyWord + '"的微博');
+        let statuses = json.data.list;
+        if (statuses.length == 0) {
+            _this.stop("恭喜你！如有漏网，请再执行一遍");
             return;
         }
         
-        let values = {};
-        matches.forEach(function(match) {
-            values[match.substr(4)] = 0;
+        _this.statuses = {};
+        statuses.forEach(function(status) {
+            _this.statuses[status.id] = status;
         }, this);
 
-        mids = Object.keys(values);
-        timer = setInterval('cleanNext();', 1000);
+        _this.mids = Object.keys(_this.statuses);
+        _this.timer = setInterval(function() {
+            _this.deleteNextWeibo();
+        }, 1000);
 
-        console.log('找到 ' + mids.length + ' 条含有"' + keyWord + '"的微博');
+        console.log("即将清理 %d 条含有 '%s' 微博", statuses.length, this.keyword);
     }
-}
+};
 
-function cleanNext() {
-    if (midIndex >= mids.length) {
-        mids = [];
-        midIndex = 0;
-        page++;
-        clearInterval(timer);
-        setTimeout('cleanByPage();', 1000);
+cleanup.prototype.deleteNextWeibo = function() {
+    if (this.midIndex < this.mids.length) {
+        this.deleteWeibo(this.mids[this.midIndex]);
+        this.midIndex++;
         return;
     }
 
-    cleanByMid(mids[midIndex]);
-    midIndex++;
-}
+    clearInterval(this.timer);
 
-function cleanByMid(mid) {
+    var _this = this;
+    setTimeout(function () {
+        _this.cleanNextPage();
+    }, 1000);
+};
+
+cleanup.prototype.deleteWeibo = function(mid) {
+    const status = this.statuses[mid];
+    http = new XMLHttpRequest();
     http.open('POST', 'https://weibo.com/aj/mblog/del?ajwvr=6', true);
     http.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
     http.send('mid=' + mid);
@@ -76,40 +81,29 @@ function cleanByMid(mid) {
             return;
         }
 
-        let json = {}
         try {
-            json = JSON.parse(http.responseText);
+            const json = JSON.parse(http.responseText);
+            if (json.code == 100000) {
+                console.log("清理 %s，发布于'%s'，内容：'%s'", mid, status.created_at, status.text);
+            }
         } catch (error) {
             return;
         }
-
-        if (json.code == 100000) {
-            console.log('删除成功 - ' + mid);
-        } else {
-            console.log('删除失败 - ' + mid);
-        }
     }
-}
+};
 
-function stop(message) {
-    clearInterval(timer);
-    running = false;
+cleanup.prototype.stop = function(message) {
     console.log(message);
-}
+    this.running = false;
+    clearInterval(this.timer);
+};
 
-function start(kw) {
-    if (running) {
-        console.log('正在删除含有"' + keyWord + '"的微博，请稍后再试');
+cleanup.prototype.start = function(keyword) {
+    if (this.running) {
+        console.log("正在清理 '%s' 的微博，请稍后。", this.keyword);
         return;
     }
 
-    console.log('开始删除含有"' + kw + '"的微博');
-    running = true;
-    mids = [];
-    page = 0;
-    midIndex = 0;
-    keyWord = kw;
-    cleanByPage();
-}
-
-start('红包');
+    this.keyword = keyword;
+    this.cleanNextPage();
+};
